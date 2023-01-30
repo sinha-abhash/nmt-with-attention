@@ -1,9 +1,10 @@
 from matplotlib import pyplot as plt
 import matplotlib.ticker as ticker
 import tensorflow as tf
+import einops
 
 from nmt_with_attention.model import Encoder, Decoder
-from nmt_with_attention.utils import tf_lower_and_split_punct
+from nmt_with_attention.utils import tf_lower_and_split_punct, ShapeChecker
 
 
 class Translator(tf.keras.Model):
@@ -26,27 +27,34 @@ class Translator(tf.keras.Model):
         return logits
 
     def translate(self, texts, *, max_length=50, temperature=0.0):
+        shape_checker = ShapeChecker()
         context = self.encoder.convert_input(texts)
+        shape_checker(context, "batch s units")
 
         tokens = []
         attention_weights = []
         next_token, done, state = self.decoder.get_initial_state(context)
 
-        for _ in range(max_length):
+        tokens = tf.TensorArray(tf.int64, size=1, dynamic_size=True)
+
+        for t in tf.range(max_length):
             next_token, done, state = self.decoder.get_next_token(
                 context, next_token, done, state, temperature
             )
 
-            tokens.append(next_token)
+            tokens = tokens.write(t, next_token)
             attention_weights.append(self.decoder.last_attention_weights)
 
-            if tf.executing_eagerly() and tf.reduce_all(done):
+            if tf.reduce_all(done):
                 break
 
-        tokens = tf.concat(tokens, axis=-1)
-        self.last_attention_weights = tf.concat(attention_weights, axis=1)
+        tokens = tokens.stack()
+        shape_checker(tokens, "t batch t1")
+        tokens = einops.rearrange(tokens, "t batch 1 -> batch t")
+        shape_checker(tokens, "batch t")
 
         result = self.decoder.tokens_to_text(tokens)
+        shape_checker(result, "batch")
         return result
 
     def plot_attention(self, text: str, **kwargs):
