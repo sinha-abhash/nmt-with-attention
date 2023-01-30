@@ -72,5 +72,3 @@ class Translator(tf.keras.Model):
 
         ax.set_xlabel("Input text")
         ax.set_ylabel("Output text")
-
-        # fig.savefig("../plotting_images/attention_plot.png")
